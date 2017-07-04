@@ -17,12 +17,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/go-socks/socks"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/roasbeef/btcd/blockchain"
 	"github.com/roasbeef/btcd/chaincfg"
 	"github.com/roasbeef/btcd/chaincfg/chainhash"
 	"github.com/roasbeef/btcd/wire"
-	"github.com/btcsuite/go-socks/socks"
-	"github.com/davecgh/go-spew/spew"
 )
 
 const (
@@ -1699,7 +1699,19 @@ out:
 		case iv := <-p.outputInvChan:
 			// No handshake?  They'll find out soon enough.
 			if p.VersionKnown() {
-				invSendQueue.PushBack(iv)
+				// If this is a new block, then we'll blast it
+				// out immediately, sipping the inv trickle
+				// queue.
+				if iv.Type == wire.InvTypeBlock ||
+					iv.Type == wire.InvTypeWitnessBlock {
+
+					invMsg := wire.NewMsgInvSizeHint(1)
+					invMsg.AddInvVect(iv)
+					waiting = queuePacket(outMsg{msg: invMsg},
+						pendingMsgs, waiting)
+				} else {
+					invSendQueue.PushBack(iv)
+				}
 			}
 
 		case <-trickleTicker.C:
