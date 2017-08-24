@@ -1051,7 +1051,8 @@ func (b *blockManager) handleInvMsg(imsg *invMsg) {
 						"soft-fork state: %v", err)
 					continue
 				}
-				segwitActive := segwitState == blockchain.ThresholdActive
+				segwitActive := segwitState == blockchain.ThresholdActive ||
+					b.server.chainParams.Net == chaincfg.SimNetParams.Net
 				imsg.peer.witnessMtx.Lock()
 				if imsg.peer.witnessEnabled && segwitActive {
 					iv.Type = wire.InvTypeWitnessBlock
