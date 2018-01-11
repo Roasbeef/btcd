@@ -1,5 +1,5 @@
-hash: d74068b4218716346d9ed6c2bd10439e7c599216dd7b63ef37e9ff0f56632898
-updated: 2017-11-17T15:59:49.625897724-08:00
+hash: a4ea207ddca072169ca0810dc36137d7f3759b0f3ef34aaa57ce689208dec001
+updated: 2018-01-11T14:18:34.709146374-05:00
 imports:
 - name: github.com/aead/siphash
   version: e404fcfc888570cadd1610538e2dbc89f66af814
@@ -7,8 +7,6 @@ imports:
   version: 84c8d2346e9fc8c7b947e243b9c24e6df9fd206a
 - name: github.com/btcsuite/fastsha256
   version: 637e656429416087660c84436a2a035d69d54e2e
-- name: github.com/btcsuite/go-flags
-  version: 6c288d648c1cc1befcb90cb5511dcacf64ae8e61
 - name: github.com/btcsuite/go-socks
   version: 4720035b7bfd2a9bb130b1c184f8bbe41b6f0d0f
   subpackages:
