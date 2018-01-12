@@ -5,6 +5,8 @@
 package mempool
 
 import (
+	"fmt"
+
 	"github.com/roasbeef/btcd/blockchain"
 	"github.com/roasbeef/btcd/wire"
 )
@@ -39,7 +41,7 @@ type TxRuleError struct {
 
 // Error satisfies the error interface and prints human-readable errors.
 func (e TxRuleError) Error() string {
-	return e.Description
+	return fmt.Sprintf("%s (RejectCode: %d)", e.Description, e.RejectCode)
 }
 
 // txRuleError creates an underlying TxRuleError with the given a set of

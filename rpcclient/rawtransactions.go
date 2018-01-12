@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"regexp"
+	"strconv"
 
 	"github.com/roasbeef/btcd/btcjson"
 	"github.com/roasbeef/btcd/chaincfg/chainhash"
@@ -257,6 +259,19 @@ func (c *Client) CreateRawTransaction(inputs []btcjson.TransactionInput,
 	return c.CreateRawTransactionAsync(inputs, amounts, lockTime).Receive()
 }
 
+// SendRawTransactionRejectError is an error that is received from
+// a FutureSendRawTransactionResult in case the transaction was
+// rejected.
+type SendRawTransactionRejectError struct {
+	RejectCode  wire.RejectCode
+	Description string
+}
+
+// Error satisfies the error interface and prints human-readable errors.
+func (e SendRawTransactionRejectError) Error() string {
+	return e.Description
+}
+
 // FutureSendRawTransactionResult is a future promise to deliver the result
 // of a SendRawTransactionAsync RPC invocation (or an applicable error).
 type FutureSendRawTransactionResult chan *response
@@ -267,6 +282,27 @@ type FutureSendRawTransactionResult chan *response
 func (r FutureSendRawTransactionResult) Receive() (*chainhash.Hash, error) {
 	res, err := receiveFuture(r)
 	if err != nil {
+		// Extract the reject code from the error description in
+		// case this is the string representation of a TxRuleError.
+		re := regexp.MustCompile("\\(RejectCode: ([0-9]+)\\)")
+		switch rpcErr := err.(type) {
+		case *btcjson.RPCError:
+			match := re.FindStringSubmatch(rpcErr.Message)
+			if len(match) >= 2 {
+				u, e := strconv.ParseUint(match[1], 10, 8)
+				if e != nil {
+					// Just return original error.
+					break
+				}
+				return nil, SendRawTransactionRejectError{
+					RejectCode:  wire.RejectCode(u),
+					Description: rpcErr.Message,
+				}
+			}
+			// Fallthrough.
+		default:
+			// Fallthrough.
+		}
 		return nil, err
 	}
 
