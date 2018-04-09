@@ -377,9 +377,11 @@ var RegressionNetParams = Params{
 	// Mempool parameters
 	RelayNonStdTxs: true,
 
-	// Human-readable part for Bech32 encoded segwit addresses, as defined in
-	// BIP 173.
-	Bech32HRPSegwit: "tb", // always tb for test net
+	// Human-readable part for Bech32 encoded segwit addresses.
+	//
+	// NOTE: The HRP is not defined in BIP 173 for regnet, but is chosen to
+	// match the value used by bitcoind.
+	Bech32HRPSegwit: "bcrt",
 
 	// Address encoding magics
 	PubKeyHashAddrID: 0x6f, // starts with m or n
