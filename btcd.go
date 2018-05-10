@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
+	"strings"
 
 	"github.com/roasbeef/btcd/blockchain/indexers"
 	"github.com/roasbeef/btcd/database"
@@ -144,9 +145,13 @@ func btcdMain(serverChan chan<- *server) error {
 		return nil
 	}
 
+	// Parse the black and whitelists as comma separated lists.
+	agentBlacklist := strings.Split(cfg.AgentBlacklist, ",")
+	agentWhitelist := strings.Split(cfg.AgentWhitelist, ",")
+
 	// Create server and start it.
-	server, err := newServer(cfg.Listeners, db, activeNetParams.Params,
-		interrupt)
+	server, err := newServer(cfg.Listeners, agentBlacklist, agentWhitelist,
+		db, activeNetParams.Params, interrupt)
 	if err != nil {
 		// TODO: this logging could do with some beautifying.
 		btcdLog.Errorf("Unable to start server on %v: %v",

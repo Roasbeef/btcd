@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/btcsuite/go-socks/socks"
+	flags "github.com/jessevdk/go-flags"
 	"github.com/roasbeef/btcd/blockchain"
 	"github.com/roasbeef/btcd/chaincfg"
 	"github.com/roasbeef/btcd/chaincfg/chainhash"
@@ -28,8 +30,6 @@ import (
 	_ "github.com/roasbeef/btcd/database/ffldb"
 	"github.com/roasbeef/btcd/mempool"
 	"github.com/roasbeef/btcutil"
-	"github.com/btcsuite/go-socks/socks"
-	flags "github.com/jessevdk/go-flags"
 )
 
 const (
@@ -104,6 +104,8 @@ type config struct {
 	BanDuration          time.Duration `long:"banduration" description:"How long to ban misbehaving peers.  Valid time units are {s, m, h}.  Minimum 1 second"`
 	BanThreshold         uint32        `long:"banthreshold" description:"Maximum allowed ban score before disconnecting and banning misbehaving peers."`
 	Whitelists           []string      `long:"whitelist" description:"Add an IP network or IP that will not be banned. (eg. 192.168.1.0/24 or ::1)"`
+	AgentBlacklist       string        `long:"agentblacklist" description:"A comma separated list of user agents substrings to which btcd will not allow connections."`
+	AgentWhitelist       string        `long:"agentwhitelist" description:"A comma separated list of user agent substrings to which must be present before allowing a particular connection, the whitelist is applied after the blacklist. An empty whitelist will allow all agents that do not fail the blacklist."`
 	RPCUser              string        `short:"u" long:"rpcuser" description:"Username for RPC connections"`
 	RPCPass              string        `short:"P" long:"rpcpass" default-mask:"-" description:"Password for RPC connections"`
 	RPCLimitUser         string        `long:"rpclimituser" description:"Username for limited RPC connections"`
