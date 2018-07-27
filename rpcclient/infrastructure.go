@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -820,7 +821,17 @@ func (c *Client) sendPost(jReq *jsonRequest) {
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	// Configure basic access authorization.
-	httpReq.SetBasicAuth(c.config.User, c.config.Pass)
+	if c.config.CookieFilePath == "" {
+		httpReq.SetBasicAuth(c.config.User, c.config.Pass)
+	} else {
+		cookie, err := ioutil.ReadFile(c.config.CookieFilePath)
+		if err == nil {
+			splitCookie := strings.Split(string(cookie), ":")
+			if len(splitCookie) == 2 {
+				httpReq.SetBasicAuth(splitCookie[0], splitCookie[1])
+			}
+		}
+	}
 
 	log.Tracef("Sending command [%s] with id %d", jReq.method, jReq.id)
 	c.sendPostRequest(httpReq, jReq)
@@ -1064,6 +1075,9 @@ type ConnConfig struct {
 
 	// Pass is the passphrase to use to authenticate to the RPC server.
 	Pass string
+
+	// Alternative to User/Pass authentication, this file get read for each request
+	CookieFilePath string
 
 	// DisableTLS specifies whether transport layer security should be
 	// disabled.  It is recommended to always use TLS if the RPC server
