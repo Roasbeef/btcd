@@ -51,7 +51,7 @@ func isSmallInt(op *opcode) bool {
 	return false
 }
 
-// isScriptHash returns true if the script passed is a pay-to-script-hash
+// isScriptHash returns true if the parseOpcodes passed are a pay-to-script-hash
 // transaction, false otherwise.
 func isScriptHash(pops []parsedOpcode) bool {
 	return len(pops) == 3 &&
@@ -60,14 +60,19 @@ func isScriptHash(pops []parsedOpcode) bool {
 		pops[2].opcode.value == OP_EQUAL
 }
 
+// isScriptHashScript returns true if the script passed is a pay-to-script-hash
+// transaction, false otherwise.
+func isScriptHashScript(script []byte) bool {
+	return len(script) == 23 &&
+		script[0] == OP_HASH160 &&
+		script[1] == OP_DATA_20 &&
+		script[22] == OP_EQUAL
+}
+
 // IsPayToScriptHash returns true if the script is in the standard
 // pay-to-script-hash (P2SH) format, false otherwise.
 func IsPayToScriptHash(script []byte) bool {
-	pops, err := parseScript(script)
-	if err != nil {
-		return false
-	}
-	return isScriptHash(pops)
+	return isScriptHashScript(script)
 }
 
 // isWitnessScriptHash returns true if the passed script is a
@@ -194,8 +199,15 @@ func IsPushOnlyScript(script []byte) bool {
 // parseScriptTemplate is the same as parseScript but allows the passing of the
 // template list for testing purposes.  When there are parse errors, it returns
 // the list of parsed opcodes up to the point of failure along with the error.
-func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode, error) {
-	retScript := make([]parsedOpcode, 0, len(script))
+func parseScriptTemplate(script []byte, opcodes *[256]opcode,
+	countOnly, precise bool) ([]parsedOpcode, int, error) {
+
+	var (
+		retScript []parsedOpcode
+		nSigs     int
+	)
+
+	var prevPop *parsedOpcode
 	for i := 0; i < len(script); {
 		instr := script[i]
 		op := &opcodes[instr]
@@ -215,12 +227,14 @@ func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode, e
 				str := fmt.Sprintf("opcode %s requires %d "+
 					"bytes, but script only has %d remaining",
 					op.name, op.length, len(script[i:]))
-				return retScript, scriptError(ErrMalformedPush,
-					str)
+				return retScript, nSigs,
+					scriptError(ErrMalformedPush, str)
 			}
 
 			// Slice out the data.
-			pop.data = script[i+1 : i+op.length]
+			if !countOnly {
+				pop.data = script[i+1 : i+op.length]
+			}
 			i += op.length
 
 		// Data pushes with parsed lengths -- OP_PUSHDATAP{1,2,4}.
@@ -232,8 +246,8 @@ func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode, e
 				str := fmt.Sprintf("opcode %s requires %d "+
 					"bytes, but script only has %d remaining",
 					op.name, -op.length, len(script[off:]))
-				return retScript, scriptError(ErrMalformedPush,
-					str)
+				return retScript, nSigs,
+					scriptError(ErrMalformedPush, str)
 			}
 
 			// Next -length bytes are little endian length of data.
@@ -251,8 +265,8 @@ func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode, e
 			default:
 				str := fmt.Sprintf("invalid opcode length %d",
 					op.length)
-				return retScript, scriptError(ErrMalformedPush,
-					str)
+				return retScript, nSigs,
+					scriptError(ErrMalformedPush, str)
 			}
 
 			// Move offset to beginning of the data.
@@ -264,24 +278,41 @@ func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode, e
 				str := fmt.Sprintf("opcode %s pushes %d bytes, "+
 					"but script only has %d remaining",
 					op.name, int(l), len(script[off:]))
-				return retScript, scriptError(ErrMalformedPush,
-					str)
+				return retScript, nSigs,
+					scriptError(ErrMalformedPush, str)
 			}
 
-			pop.data = script[off : off+int(l)]
+			if !countOnly {
+				pop.data = script[off : off+int(l)]
+			}
 			i += 1 - op.length + int(l)
 		}
 
-		retScript = append(retScript, pop)
+		if !countOnly {
+			retScript = append(retScript, pop)
+		}
+
+		nSigs += countSigOps(pop, prevPop, precise)
+		prevPop = &pop
 	}
 
-	return retScript, nil
+	return retScript, nSigs, nil
 }
 
 // parseScript preparses the script in bytes into a list of parsedOpcodes while
 // applying a number of sanity checks.
 func parseScript(script []byte) ([]parsedOpcode, error) {
-	return parseScriptTemplate(script, &opcodeArray)
+	pops, _, err := parseScriptTemplate(script, &opcodeArray, false, false)
+	return pops, err
+}
+
+// countScriptSigOps counts the number of sig ops in the scripts while applying
+// a number of sanity checks. The precise argument determines whether the count
+// should be precise or use a default value of 20 for multisigs.
+func countScriptSigOps(script []byte, precise bool) (int, error) {
+	_, nSigs, err := parseScriptTemplate(script, &opcodeArray, true,
+		precise)
+	return nSigs, err
 }
 
 // unparseScript reversed the action of parseScript and returns the
@@ -703,33 +734,43 @@ func asSmallInt(op *opcode) int {
 // requested then we attempt to count the number of operations for a multisig
 // op. Otherwise we use the maximum.
 func getSigOpCount(pops []parsedOpcode, precise bool) int {
-	nSigs := 0
+	var nSigs int
+	var prevPop *parsedOpcode
 	for i, pop := range pops {
-		switch pop.opcode.value {
-		case OP_CHECKSIG:
-			fallthrough
-		case OP_CHECKSIGVERIFY:
-			nSigs++
-		case OP_CHECKMULTISIG:
-			fallthrough
-		case OP_CHECKMULTISIGVERIFY:
-			// If we are being precise then look for familiar
-			// patterns for multisig, for now all we recognize is
-			// OP_1 - OP_16 to signify the number of pubkeys.
-			// Otherwise, we use the max of 20.
-			if precise && i > 0 &&
-				pops[i-1].opcode.value >= OP_1 &&
-				pops[i-1].opcode.value <= OP_16 {
-				nSigs += asSmallInt(pops[i-1].opcode)
-			} else {
-				nSigs += MaxPubKeysPerMultiSig
-			}
-		default:
-			// Not a sigop.
-		}
+		nSigs += countSigOps(pop, prevPop, precise)
+		prevPop = &pops[i]
 	}
 
 	return nSigs
+}
+
+// countSigOps returns the sigop count for a particular opcode. If pop is not
+// the first opcode in the script, prevPop MUST be populated with a pointer to
+// the previous opcode. If precise mode is requested then we attempt to count
+// the number of operations for a multisig op. Otherwise we use the maximum.
+func countSigOps(pop parsedOpcode, prevPop *parsedOpcode, precise bool) int {
+	switch pop.opcode.value {
+	case OP_CHECKSIG:
+		fallthrough
+	case OP_CHECKSIGVERIFY:
+		return 1
+	case OP_CHECKMULTISIG:
+		fallthrough
+	case OP_CHECKMULTISIGVERIFY:
+		// If we are being precise then look for familiar patterns for
+		// multisig, for now all we recognize is OP_1 - OP_16 to signify
+		// the number of pubkeys.  Otherwise, we use the max of 20.
+		if precise && prevPop != nil &&
+			prevPop.opcode.value >= OP_1 &&
+			prevPop.opcode.value <= OP_16 {
+			return asSmallInt(prevPop.opcode)
+		} else {
+			return MaxPubKeysPerMultiSig
+		}
+	default:
+		// Not a sigop.
+		return 0
+	}
 }
 
 // GetSigOpCount provides a quick count of the number of signature operations
@@ -739,8 +780,8 @@ func getSigOpCount(pops []parsedOpcode, precise bool) int {
 func GetSigOpCount(script []byte) int {
 	// Don't check error since parseScript returns the parsed-up-to-error
 	// list of pops.
-	pops, _ := parseScript(script)
-	return getSigOpCount(pops, false)
+	nSigs, _ := countScriptSigOps(script, false)
+	return nSigs
 }
 
 // GetPreciseSigOpCount returns the number of signature operations in
@@ -749,13 +790,12 @@ func GetSigOpCount(script []byte) int {
 // operations in the transaction.  If the script fails to parse, then the count
 // up to the point of failure is returned.
 func GetPreciseSigOpCount(scriptSig, scriptPubKey []byte, bip16 bool) int {
-	// Don't check error since parseScript returns the parsed-up-to-error
-	// list of pops.
-	pops, _ := parseScript(scriptPubKey)
-
 	// Treat non P2SH transactions as normal.
-	if !(bip16 && isScriptHash(pops)) {
-		return getSigOpCount(pops, true)
+	if !(bip16 && isScriptHashScript(scriptPubKey)) {
+		// Don't check error since countScriptSigOps returns the
+		// parsed-up-to-error count of sigs.
+		nSigs, _ := countScriptSigOps(scriptPubKey, true)
+		return nSigs
 	}
 
 	// The public key script is a pay-to-script-hash, so parse the signature
@@ -784,8 +824,8 @@ func GetPreciseSigOpCount(scriptSig, scriptPubKey []byte, bip16 bool) int {
 	// returns the parsed-up-to-error list of pops and the consensus rules
 	// dictate signature operations are counted up to the first parse
 	// failure.
-	shPops, _ := parseScript(shScript)
-	return getSigOpCount(shPops, true)
+	nSigs, _ := countScriptSigOps(shScript, true)
+	return nSigs
 }
 
 // GetWitnessSigOpCount returns the number of signature operations generated by
@@ -839,8 +879,8 @@ func getWitnessSigOps(pkScript []byte, witness wire.TxWitness) int {
 			len(witness) > 0:
 
 			witnessScript := witness[len(witness)-1]
-			pops, _ := parseScript(witnessScript)
-			return getSigOpCount(pops, true)
+			nSigs, _ := countScriptSigOps(witnessScript, true)
+			return nSigs
 		}
 	}
 
