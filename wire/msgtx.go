@@ -318,6 +318,12 @@ type MsgTx struct {
 	TxIn     []*TxIn
 	TxOut    []*TxOut
 	LockTime uint32
+
+	// cachedSeralizedNoWitness is a cached version of the serialization of
+	// this transaction without witness data. When we decode a transaction,
+	// we'll write out the non-witness bytes to this so we can quickly
+	// calculate the TxHash later if needed.
+	cachedSeralizedNoWitness []byte
 }
 
 // AddTxIn adds a transaction input to the message.
@@ -332,13 +338,19 @@ func (msg *MsgTx) AddTxOut(to *TxOut) {
 
 // TxHash generates the Hash for the transaction.
 func (msg *MsgTx) TxHash() chainhash.Hash {
-	// Encode the transaction and calculate double sha256 on the result.
-	// Ignore the error returns since the only way the encode could fail
-	// is being out of memory or due to nil pointers, both of which would
-	// cause a run-time panic.
-	buf := bytes.NewBuffer(make([]byte, 0, msg.SerializeSizeStripped()))
-	_ = msg.SerializeNoWitness(buf)
-	return chainhash.DoubleHashH(buf.Bytes())
+	if msg.cachedSeralizedNoWitness == nil {
+		// Encode the transaction and calculate double sha256 on the
+		// result.  Ignore the error returns since the only way the
+		// encode could fail is being out of memory or due to nil
+		// pointers, both of which would cause a run-time panic.
+		strippedSize := msg.SerializeSizeStripped()
+		buf := bytes.NewBuffer(make([]byte, 0, strippedSize))
+		_ = msg.SerializeNoWitness(buf)
+
+		msg.cachedSeralizedNoWitness = buf.Bytes()
+	}
+
+	return chainhash.DoubleHashH(msg.cachedSeralizedNoWitness)
 }
 
 // WitnessHash generates the hash of the transaction serialized according to
@@ -436,7 +448,14 @@ func (msg *MsgTx) Copy() *MsgTx {
 // See Deserialize for decoding transactions stored to disk, such as in a
 // database, as opposed to decoding transactions from the wire.
 func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
-	version, err := binarySerializer.Uint32(r, littleEndian)
+	// We'll use a tee reader in order to incrementally cache the raw
+	// non-witness serialization of this transaction. We'll then later
+	// cache this value as it allow to compute the TxHash more quickly, as
+	// we don't need to re-serialize the entire transaction.
+	var rawTxBuf bytes.Buffer
+	rawTxTeeReader := io.TeeReader(r, &rawTxBuf)
+
+	version, err := binarySerializer.Uint32(rawTxTeeReader, littleEndian)
 	if err != nil {
 		return err
 	}
@@ -470,6 +489,13 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 		if err != nil {
 			return err
 		}
+	}
+
+	// Write out the actual number of inputs as this won't be the very byte
+	// series after the versino of segwit transactions.
+	if WriteVarInt(&rawTxBuf, pver, count); err != nil {
+		str := fmt.Sprintf("unable to write txin count: %v", err)
+		return messageError("MsgTx.BtcDecode", str)
 	}
 
 	// Prevent more input transactions than could possibly fit into a
@@ -520,7 +546,7 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 		// and needs to be returned to the pool on error.
 		ti := &txIns[i]
 		msg.TxIn[i] = ti
-		err = readTxIn(r, pver, msg.Version, ti)
+		err = readTxIn(rawTxTeeReader, pver, msg.Version, ti)
 		if err != nil {
 			returnScriptBuffers()
 			return err
@@ -528,7 +554,7 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 		totalScriptSize += uint64(len(ti.SignatureScript))
 	}
 
-	count, err = ReadVarInt(r, pver)
+	count, err = ReadVarInt(rawTxTeeReader, pver)
 	if err != nil {
 		returnScriptBuffers()
 		return err
@@ -553,7 +579,7 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 		// and needs to be returned to the pool on error.
 		to := &txOuts[i]
 		msg.TxOut[i] = to
-		err = ReadTxOut(r, pver, msg.Version, to)
+		err = ReadTxOut(rawTxTeeReader, pver, msg.Version, to)
 		if err != nil {
 			returnScriptBuffers()
 			return err
@@ -601,7 +627,9 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 		}
 	}
 
-	msg.LockTime, err = binarySerializer.Uint32(r, littleEndian)
+	msg.LockTime, err = binarySerializer.Uint32(
+		rawTxTeeReader, littleEndian,
+	)
 	if err != nil {
 		returnScriptBuffers()
 		return err
@@ -674,6 +702,11 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 		// Return the temporary script buffer to the pool.
 		scriptPool.Return(pkScript)
 	}
+
+	// Now that we've decoded the entire transaction without any issues,
+	// we'll cache the non-witness serialization so we can more quickly
+	// calculate the TxHash in the future.
+	msg.cachedSeralizedNoWitness = rawTxBuf.Bytes()
 
 	return nil
 }
