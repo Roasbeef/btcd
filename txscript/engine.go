@@ -1093,7 +1093,7 @@ func (vm *Engine) Execute() (err error) {
 
 	done := false
 	for !done {
-		log.Tracef("%v", newLogClosure(func() string {
+		log.Infof("%v", newLogClosure(func() string {
 			dis, err := vm.DisasmPC()
 			if err != nil {
 				return fmt.Sprintf("stepping - failed to disasm pc: %v", err)
@@ -1105,7 +1105,7 @@ func (vm *Engine) Execute() (err error) {
 		if err != nil {
 			return err
 		}
-		log.Tracef("%v", newLogClosure(func() string {
+		log.Infof("%v", newLogClosure(func() string {
 			var dstr, astr string
 
 			// Log the non-empty stacks when tracing.
