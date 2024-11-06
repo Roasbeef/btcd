@@ -20,6 +20,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/davecgh/go-spew/spew"
 )
 
 // An opcode defines the information related to a txscript opcode.  opfunc, if
@@ -2093,7 +2094,7 @@ func opcodeCheckSig(op *opcode, data []byte, vm *Engine) error {
 	case !valid && vm.taprootCtx != nil && len(fullSigBytes) != 0:
 		fallthrough
 	case !valid && vm.hasFlag(ScriptVerifyNullFail) && len(fullSigBytes) > 0:
-		str := "signature not empty on failed checksig"
+		str := fmt.Sprintf("signature not empty on failed checksig: %v", spew.Sdump(vm.tx))
 		return scriptError(ErrNullFail, str)
 	}
 
