@@ -6,7 +6,9 @@ package blockchain
 
 import (
 	"testing"
+	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
@@ -41,6 +43,71 @@ func TestThresholdStateStringer(t *testing.T) {
 				test.want)
 			continue
 		}
+	}
+}
+
+// TestThresholdStateTransition_AlwaysActiveHeight verifies that when the
+// deployment's AlwaysActiveHeight is reached (or exceeded by the next block),
+// the state is immediately forced to ThresholdActive, regardless of the current
+// state.
+func TestThresholdStateTransition_AlwaysActiveHeight(t *testing.T) {
+	// Create a dummy block node with height set and parent pointing to itself.
+	prevNode := &blockNode{height: 100}
+	prevNode.parent = prevNode
+
+	// Scenario 1:
+	// Set AlwaysActiveHeight such that next block (height 101) meets the condition.
+	deployment := chaincfg.ConsensusDeployment{
+		BitNumber:                 2,
+		AlwaysActiveHeight:        101, // Force activation if next block height >= 101.
+		MinActivationHeight:       0,
+		CustomActivationThreshold: 0,
+		// With a zero start time, the deployment starter always signals eligible.
+		DeploymentStarter: chaincfg.NewMedianTimeDeploymentStarter(time.Time{}),
+		DeploymentEnder:   chaincfg.NewMedianTimeDeploymentEnder(time.Time{}),
+	}
+	checker := deploymentChecker{
+		deployment: &deployment,
+		// The chain pointer is unused in our thresholdStateTransition logic.
+		chain: &BlockChain{},
+	}
+
+	state, err := thresholdStateTransition(ThresholdDefined, prevNode,
+		checker, 2016)
+	if err != nil {
+		t.Fatalf("thresholdStateTransition error: %v", err)
+	}
+	if state != ThresholdActive {
+		t.Errorf("Expected forced activation to ThresholdActive, got state %v", state)
+	}
+
+	// Scenario 2:
+	// Set AlwaysActiveHeight higher than next block height so the forced activation
+	// condition is not met.
+	deployment.AlwaysActiveHeight = 150
+	// Use a new dummy node with height 100.
+	node := &blockNode{height: 100}
+	node.parent = node
+	state, err = thresholdStateTransition(ThresholdDefined, node, checker, 2016)
+	if err != nil {
+		t.Fatalf("thresholdStateTransition error: %v", err)
+	}
+	// With the forced activation not triggered and an always-starting deployment,
+	// the state should transition to ThresholdStarted.
+	if state != ThresholdDefined {
+		t.Errorf("Expected state to be ThresholdStarted, got state %v", state)
+	}
+
+	// Scenario 3:
+	// When AlwaysActiveHeight is unset (zero), the helper returns math.MaxUint32
+	// so normal state logic applies. With the current dummy node, HasStarted is true.
+	deployment.AlwaysActiveHeight = 0
+	state, err = thresholdStateTransition(ThresholdDefined, node, checker, 2016)
+	if err != nil {
+		t.Fatalf("thresholdStateTransition error: %v", err)
+	}
+	if state != ThresholdDefined {
+		t.Errorf("Expected state to be ThresholdStarted when AlwaysActiveHeight is unset, got state %v", state)
 	}
 }
 

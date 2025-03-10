@@ -78,6 +78,16 @@ type Checkpoint struct {
 	Hash   *chainhash.Hash
 }
 
+// EffectiveAlwaysActiveHeight returns the effective activation height for the
+// deployment. If AlwaysActiveHeight is unset (i.e. zero), it returns
+// the maximum uint32 value to indicate that it does not force activation.
+func (d *ConsensusDeployment) EffectiveAlwaysActiveHeight() uint32 {
+    if d.AlwaysActiveHeight == 0 {
+        return ^uint32(0) // equivalent to math.MaxUint32
+    }
+    return d.AlwaysActiveHeight
+}
+
 // DNSSeed identifies a DNS seed.
 type DNSSeed struct {
 	// Host defines the hostname of the seed.
@@ -107,6 +117,11 @@ type ConsensusDeployment struct {
 	// MinerConfirmationWindow denotes the threshold required for
 	// activation. A value of 1815 block denotes a 90% threshold.
 	CustomActivationThreshold uint32
+
+	// AlwaysActiveHeight defines an optional block threshold at which the
+	// deployment is forced to be active. If unset (0), it defaults to math.MaxUint32,
+	// meaning the deployment does not force activation.
+	AlwaysActiveHeight uint32
 
 	// DeploymentStarter is used to determine if the given
 	// ConsensusDeployment has started or not.

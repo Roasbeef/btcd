@@ -164,6 +164,18 @@ func thresholdStateTransition(state ThresholdState, prevNode *blockNode,
 	checker thresholdConditionChecker,
 	confirmationWindow int32) (ThresholdState, error) {
 
+	// If the deployment has a nonzero AlwaysActiveHeight and the next
+	// block’s height is at or above that threshold, then force the state
+	// to Active.
+	if d, ok := checker.(deploymentChecker); ok {
+		effectiveHeight := d.deployment.EffectiveAlwaysActiveHeight()
+		if uint32(prevNode.height)+1 >= effectiveHeight {
+			log.Debugf("Force activating deployment: next block height %d >= EffectiveAlwaysActiveHeight %d",
+				uint32(prevNode.height)+1, effectiveHeight)
+			return ThresholdActive, nil
+		}
+	}
+
 	switch state {
 	case ThresholdDefined:
 		// The deployment of the rule change fails if it

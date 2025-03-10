@@ -55,3 +55,4 @@ btcutil/psbt/coverage.txt
 /btcd
 /findcheckpoint
 /gencerts
+.aider*

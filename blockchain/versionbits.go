@@ -5,6 +5,8 @@
 package blockchain
 
 import (
+	"math"
+
 	"github.com/btcsuite/btcd/chaincfg"
 )
 
@@ -207,23 +209,29 @@ func (c deploymentChecker) MinerConfirmationWindow() uint32 {
 }
 
 // EligibleToActivate returns true if a custom deployment can transition from
-// the LockedIn to the Active state. For normal deployments, this always
-// returns true. However, some deployments add extra rules like a minimum
-// activation height, which can be abstracted into a generic arbitrary check at
-// the final state via this method.
-//
-// This implementation always returns true, unless a minimum activation height
-// is specified.
-//
-// This is part of the thresholdConditionChecker interface implementation.
+// the LockedIn to the Active state. In addition to the traditional minimum
+// activation height (MinActivationHeight), an optional AlwaysActiveHeight can
+// force the deployment to be active after a specified height.
 func (c deploymentChecker) EligibleToActivate(blkNode *blockNode) bool {
-	// No activation height, so it's always ready to go.
+	// Determine the effective always active height.
+	// If AlwaysActiveHeight is unset (i.e. zero), treat it as math.MaxUint32.
+	effectiveHeight := c.deployment.AlwaysActiveHeight
+	if effectiveHeight == 0 {
+		effectiveHeight = math.MaxUint32
+	}
+
+	// If the next block's height meets or exceeds the always active threshold,
+	// force activation.
+	if uint32(blkNode.height)+1 >= effectiveHeight {
+		return true
+	}
+
+	// Otherwise, if no minimum activation height is set, treat as always active.
 	if c.deployment.MinActivationHeight == 0 {
 		return true
 	}
 
-	// If the _next_ block (as this is the prior block to the one being
-	// connected is the min height or beyond, then this can activate.
+	// Fallback to the traditional minimum activation height check.
 	return uint32(blkNode.height)+1 >= c.deployment.MinActivationHeight
 }
 
