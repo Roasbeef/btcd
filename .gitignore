@@ -58,3 +58,4 @@ btcutil/psbt/coverage.txt
 
 .DS_Store
 .aider*
+wire/testdata/
