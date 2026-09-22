@@ -6,6 +6,7 @@ package wire
 
 import (
 	"bytes"
+	"os"
 	"testing"
 )
 
@@ -21,6 +22,56 @@ func benchmarkCountPayload(b *testing.B, prefix []byte, count uint64) []byte {
 	}
 
 	return payload.Bytes()
+}
+
+func benchmarkCompleteStreamingMessage(b *testing.B, msg Message) {
+	b.Helper()
+
+	var encoded bytes.Buffer
+	_, err := WriteMessageWithEncodingN(
+		&encoded, msg, ProtocolVersion, MainNet, WitnessEncoding,
+	)
+	if err != nil {
+		b.Fatal(err)
+	}
+	payload := encoded.Bytes()
+
+	b.SetBytes(int64(len(payload)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		reader := &readSizeRecorder{
+			reader: bytes.NewReader(payload),
+		}
+		_, _, _, err := ReadMessageWithEncodingN(
+			reader, ProtocolVersion, MainNet, WitnessEncoding,
+		)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkCompleteStreamingMessage measures complete framed messages read
+// from a reader that does not expose its remaining length.
+func BenchmarkCompleteStreamingMessage(b *testing.B) {
+	b.Run("ping", func(b *testing.B) {
+		benchmarkCompleteStreamingMessage(b, NewMsgPing(1))
+	})
+
+	blockBytes, err := os.ReadFile(
+		"testdata/block-00000000000000000021868c2cefc52a480d173c849412fe81c4e5ab806f94ab.blk",
+	)
+	if err != nil {
+		b.Fatal(err)
+	}
+	var block MsgBlock
+	if err := block.Deserialize(bytes.NewReader(blockBytes)); err != nil {
+		b.Fatal(err)
+	}
+	b.Run("block", func(b *testing.B) {
+		benchmarkCompleteStreamingMessage(b, &block)
+	})
 }
 
 // BenchmarkTruncatedDecodeBudget measures allocation when a length or element

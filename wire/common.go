@@ -43,21 +43,58 @@ func readBytes(r io.Reader, count uint64) ([]byte, error) {
 		return []byte{}, nil
 	}
 
-	remaining, known := readerRemaining(r)
-	if known && count <= remaining {
+	available, known := readerRemaining(r)
+	if known && count <= available {
 		result := make([]byte, count)
 		n, err := io.ReadFull(r, result)
 		return result[:n], err
 	}
 
-	var result bytes.Buffer
-	result.Grow(int(min(count, defaultReadBufferSize)))
-	n, err := io.CopyN(&result, r, int64(count))
-	if err == io.EOF && n > 0 {
-		err = io.ErrUnexpectedEOF
+	// Read into bounded chunks rather than using io.CopyN with a
+	// bytes.Buffer. Buffer.ReadFrom reserves more space before its final EOF
+	// check, which can grow the buffer beyond count after a complete read.
+	// Each chunk below is capped by the remaining payload and is allocated
+	// only after the preceding bytes arrive.
+	remaining := count
+	chunkSize := uint64(defaultReadBufferSize)
+
+	// The current payload maximum needs fewer than 16 geometrically sized
+	// chunks, so the chunk metadata does not need to grow while reading.
+	chunks := make([][]byte, 0, 16)
+	totalRead := 0
+	for remaining > 0 {
+		chunkSize = min(chunkSize, remaining)
+		chunk := make([]byte, int(chunkSize))
+		n := 0
+		var err error
+		for n < len(chunk) && err == nil {
+			var bytesRead int
+			bytesRead, err = r.Read(chunk[n:])
+			n += bytesRead
+		}
+
+		chunks = append(chunks, chunk[:n])
+		totalRead += n
+		remaining -= uint64(n)
+		if err != nil && remaining > 0 {
+			if err == io.EOF && totalRead > 0 {
+				err = io.ErrUnexpectedEOF
+			}
+			if len(chunks) == 1 {
+				return chunks[0], err
+			}
+
+			return bytes.Join(chunks, nil), err
+		}
+
+		chunkSize *= 2
 	}
 
-	return result.Bytes(), err
+	if len(chunks) == 1 {
+		return chunks[0], nil
+	}
+
+	return bytes.Join(chunks, nil), nil
 }
 
 // readerRemaining returns the number of buffered bytes exposed by the concrete

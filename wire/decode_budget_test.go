@@ -6,6 +6,7 @@ package wire
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"testing"
 
@@ -304,9 +305,64 @@ func TestTruncatedVariableBytesBudget(t *testing.T) {
 	}
 }
 
+// TestCompleteStreamingBytesCapacity ensures a complete opaque read returns an
+// exactly sized payload instead of retaining capacity beyond its length.
+func TestCompleteStreamingBytesCapacity(t *testing.T) {
+	payload := bytes.Repeat(
+		[]byte{0x01}, defaultReadBufferSize+1,
+	)
+	reader := &readSizeRecorder{reader: bytes.NewReader(payload)}
+	result, err := readBytes(reader, uint64(len(payload)))
+	if err != nil {
+		t.Fatalf("unable to read complete payload: %v", err)
+	}
+	if !bytes.Equal(result, payload) {
+		t.Fatal("decoded payload differs from input")
+	}
+	if cap(result) != len(result) {
+		t.Fatalf("payload capacity is %d, want %d", cap(result), len(result))
+	}
+}
+
+// TestStreamingBytesPreservesBoundaryError ensures an error returned with a
+// full internal chunk is not discarded while the payload remains incomplete.
+func TestStreamingBytesPreservesBoundaryError(t *testing.T) {
+	errBoundary := errors.New("chunk boundary")
+	reader := &boundaryErrorReader{
+		payload: bytes.Repeat([]byte{0x01}, defaultReadBufferSize),
+		err:     errBoundary,
+	}
+	result, err := readBytes(reader, defaultReadBufferSize+1)
+	if !errors.Is(err, errBoundary) {
+		t.Fatalf("unexpected read error: got %v, want %v", err, errBoundary)
+	}
+	if len(result) != defaultReadBufferSize {
+		t.Fatalf("payload length is %d, want %d", len(result),
+			defaultReadBufferSize)
+	}
+	if reader.reads != 1 {
+		t.Fatalf("reader called %d times, want 1", reader.reads)
+	}
+}
+
 type readSizeRecorder struct {
 	reader io.Reader
 	max    int
+}
+
+type boundaryErrorReader struct {
+	payload []byte
+	err     error
+	reads   int
+}
+
+func (r *boundaryErrorReader) Read(p []byte) (int, error) {
+	r.reads++
+	if r.reads > 1 {
+		return 0, io.EOF
+	}
+
+	return copy(p, r.payload), r.err
 }
 
 type inflatedLenReader struct {
