@@ -128,6 +128,71 @@ func TestScriptArenaRewind(t *testing.T) {
 	require.Equal(t, &largest[0], &s[0])
 }
 
+// TestBlockArenaTransactionReuse ensures block staging depends on the largest
+// transaction rather than the aggregate scripts across the block.
+func TestBlockArenaTransactionReuse(t *testing.T) {
+	for _, locations := range []bool{false, true} {
+		name := "deserialize"
+		if locations {
+			name = "transaction_locations"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			original := scriptChunkPools
+			t.Cleanup(func() {
+				scriptChunkPools = original
+			})
+
+			var allocated [len(scriptChunkClasses)]int
+			for i, size := range scriptChunkClasses {
+				scriptChunkPools[i] = &chunkClassPool{
+					fixed: make(
+						chan *[]byte, scriptChunkFixedCaps[i],
+					),
+					pool: sync.Pool{New: func() interface{} {
+						allocated[i]++
+						chunk := make([]byte, size)
+						return &chunk
+					}},
+				}
+			}
+
+			block := MsgBlock{Header: blockOne.Header}
+			for i := 0; i < 1000; i++ {
+				block.AddTransaction(blockOne.Transactions[0])
+			}
+
+			var encoded bytes.Buffer
+			require.NoError(t, block.Serialize(&encoded))
+
+			var decoded MsgBlock
+			if locations {
+				locs, err := decoded.DeserializeTxLoc(
+					bytes.NewBuffer(encoded.Bytes()),
+				)
+				require.NoError(t, err)
+				require.Len(t, locs, len(block.Transactions))
+			} else {
+				require.NoError(t, decoded.Deserialize(
+					bytes.NewReader(encoded.Bytes()),
+				))
+			}
+
+			var roundTrip bytes.Buffer
+			require.NoError(t, decoded.Serialize(&roundTrip))
+			require.Equal(t, encoded.Bytes(), roundTrip.Bytes())
+
+			for i, count := range allocated {
+				want := 0
+				if i == txScriptChunkClass {
+					want = 1
+				}
+				require.Equal(t, want, count, "class %d", i)
+			}
+		})
+	}
+}
+
 // TestScriptArenaDecodeGrowth decodes a transaction whose script data
 // overflows the starting chunk class for standalone transactions, ensuring
 // the decode path grows the arena transparently.
