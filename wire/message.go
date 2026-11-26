@@ -62,7 +62,10 @@ const (
 	CmdGetCFilters  = "getcfilters"
 	CmdGetCFHeaders = "getcfheaders"
 	CmdGetCFCheckpt = "getcfcheckpt"
+	CmdGetCFStage   = "getcfstage"
+	CmdGetCFStages  = "getcfstages"
 	CmdCFilter      = "cfilter"
+	CmdCFStage      = "cfstage"
 	CmdCFHeaders    = "cfheaders"
 	CmdCFCheckpt    = "cfcheckpt"
 	CmdSendAddrV2   = "sendaddrv2"
@@ -241,6 +244,12 @@ func makeEmptyMessage(command string) (Message, error) {
 	case CmdGetCFilters:
 		msg = &MsgGetCFilters{}
 
+	case CmdGetCFStage:
+		msg = &MsgGetCFStage{}
+
+	case CmdGetCFStages:
+		msg = &MsgGetCFStages{}
+
 	case CmdGetCFHeaders:
 		msg = &MsgGetCFHeaders{}
 
@@ -249,6 +258,9 @@ func makeEmptyMessage(command string) (Message, error) {
 
 	case CmdCFilter:
 		msg = &MsgCFilter{}
+
+	case CmdCFStage:
+		msg = &MsgCFStage{}
 
 	case CmdCFHeaders:
 		msg = &MsgCFHeaders{}
