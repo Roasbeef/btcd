@@ -306,9 +306,12 @@ type server struct {
 	addrIndex *indexers.AddrIndex
 	cfIndex   *indexers.CfIndex
 
-	// cfStageRequests limits experimental stage requests in flight across
+	// experimentalCFRequests limits experimental filter requests across
 	// all peers. It is nil when the experiment is disabled.
-	cfStageRequests chan struct{}
+	experimentalCFRequests chan struct{}
+
+	// cfRanges holds immutable range filters loaded at startup.
+	cfRanges map[wire.MsgGetCFRange]indexedCFRange
 
 	// The fee estimator keeps track of how long transactions are left in
 	// the mempool before they are mined into blocks.
@@ -2344,9 +2347,12 @@ func newPeerConfig(sp *serverPeer) *peer.Config {
 		DisableStallHandler: cfg.DisableStallHandler,
 		UsingV2Conn:         cfg.V2Transport,
 	}
-	if sp.server.cfStageRequests != nil {
+	if sp.server.experimentalCFRequests != nil {
 		peerCfg.Listeners.OnGetCFStage = sp.OnGetCFStage
 		peerCfg.Listeners.OnGetCFStages = sp.OnGetCFStages
+	}
+	if len(sp.server.cfRanges) > 0 {
+		peerCfg.Listeners.OnGetCFRange = sp.OnGetCFRange
 	}
 
 	return peerCfg
@@ -2977,6 +2983,11 @@ func newServer(listenAddrs, agentBlacklist, agentWhitelist []string,
 	db database.DB, chainParams *chaincfg.Params,
 	interrupt <-chan struct{}) (*server, error) {
 
+	cfRanges, err := loadCFRanges(cfg.RangeCFilters, chainParams.Net)
+	if err != nil {
+		return nil, err
+	}
+
 	services := defaultServices
 	if cfg.NoPeerBloomFilters {
 		services &^= wire.SFNodeBloom
@@ -3037,6 +3048,7 @@ func newServer(listenAddrs, agentBlacklist, agentWhitelist []string,
 		sigCache:             txscript.NewSigCache(cfg.SigCacheMaxSize),
 		hashCache:            txscript.NewHashCache(cfg.SigCacheMaxSize),
 		cfCheckptCaches:      make(map[wire.FilterType][]cfHeaderKV),
+		cfRanges:             cfRanges,
 		agentBlacklist:       agentBlacklist,
 		agentWhitelist:       agentWhitelist,
 	}
@@ -3073,7 +3085,7 @@ func newServer(listenAddrs, agentBlacklist, agentWhitelist []string,
 		indexes = append(indexes, s.cfIndex)
 	}
 	if cfg.ExperimentalCFStages {
-		s.cfStageRequests = make(chan struct{}, maxActiveCFStageRequests)
+		s.experimentalCFRequests = make(chan struct{}, maxExperimentalCFRequests)
 	}
 
 	// Create an index manager if any of the optional indexes are enabled.
@@ -3094,7 +3106,6 @@ func newServer(listenAddrs, agentBlacklist, agentWhitelist []string,
 	}
 
 	// Create a new block chain instance with the appropriate configuration.
-	var err error
 	s.chain, err = blockchain.New(&blockchain.Config{
 		DB:               s.db,
 		Interrupt:        interrupt,

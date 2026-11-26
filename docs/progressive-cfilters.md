@@ -31,7 +31,7 @@ available.
 
 The server prepares a group's stages from a single index snapshot before
 sending them. If any requested filter is unavailable or outside the experimental
-limits, the server ignores the request. The server accepts up to four stage
+limits, the server ignores the request. The server accepts up to four experimental filter
 requests in flight across all peers and disconnects after ten seconds if a
 response cannot be written. Clients should set their own request timeout.
 
@@ -56,3 +56,32 @@ Stage payloads carry no independent commitments. The four stages reconstruct
 the same value sequence as the indexed BIP158 filter, which a client can
 validate against the BIP157 filter hash. A no-match decision based on an
 unverified prefix relies on the explicitly configured peer.
+
+## Precomputed range filters
+
+Add `--experimentalrangecfilter=/path/to/filter.frc` to the example daemon
+commands to serve a serialized range union. The flag can be repeated up to
+16 times for different endpoint pairs. For example, use the Fermion
+`rangefilter` package to build the object from one to sixteen contiguous
+blocks and their resolved spent output scripts. Each object uses a
+range-derived SipHash key over the shared script set.
+
+| Command | Payload |
+| --- | --- |
+| `getcfrange` | 32-byte first block hash, 32-byte last block hash |
+| `cfrange` | CompactSize object length, serialized range object |
+
+The range object starts with version 1, the 4-byte Bitcoin network magic,
+the 4-byte inclusive first and last heights, and the internal-order first
+and last block hashes. All integer fields use little-endian byte order.
+Next are a 4-byte length and up to 256 KiB of canonical BIP158 GCS bytes,
+including the CompactSize element count. The final 32 bytes are SHA256 over
+the domain `fermion/range-filter/commitment/v1\x00` followed by all preceding
+object bytes. The key is the first 16 bytes of SHA256 over the domain
+`fermion/range-filter/key/v1\x00` followed by the first 77 object bytes.
+
+The daemon reads the configured files once at startup and validates their
+network, format, and commitment. It serves the original bytes while the
+specified endpoints are on its active chain at the recorded heights.
+For verification of script coverage, independently rebuild the union from
+authenticated blocks and spent output scripts.

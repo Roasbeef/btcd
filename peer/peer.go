@@ -129,6 +129,10 @@ type MessageListeners struct {
 	// message.
 	OnCFStage func(p *Peer, msg *wire.MsgCFStage)
 
+	// OnCFRange is invoked when a peer receives an experimental range
+	// filter response.
+	OnCFRange func(p *Peer, msg *wire.MsgCFRange)
+
 	// OnCFHeaders is invoked when a peer receives a cfheaders bitcoin
 	// message.
 	OnCFHeaders func(p *Peer, msg *wire.MsgCFHeaders)
@@ -169,6 +173,10 @@ type MessageListeners struct {
 	// OnGetCFStages is invoked when a peer receives an experimental grouped
 	// request for progressive filter stages.
 	OnGetCFStages func(p *Peer, msg *wire.MsgGetCFStages)
+
+	// OnGetCFRange is invoked when a peer requests an experimental range
+	// filter.
+	OnGetCFRange func(p *Peer, msg *wire.MsgGetCFRange)
 
 	// OnGetCFHeaders is invoked when a peer receives a getcfheaders
 	// bitcoin message.
@@ -1642,6 +1650,11 @@ out:
 				p.cfg.Listeners.OnGetCFStages(p, msg)
 			}
 
+		case *wire.MsgGetCFRange:
+			if p.cfg.Listeners.OnGetCFRange != nil {
+				p.cfg.Listeners.OnGetCFRange(p, msg)
+			}
+
 		case *wire.MsgGetCFHeaders:
 			if p.cfg.Listeners.OnGetCFHeaders != nil {
 				p.cfg.Listeners.OnGetCFHeaders(p, msg)
@@ -1660,6 +1673,11 @@ out:
 		case *wire.MsgCFStage:
 			if p.cfg.Listeners.OnCFStage != nil {
 				p.cfg.Listeners.OnCFStage(p, msg)
+			}
+
+		case *wire.MsgCFRange:
+			if p.cfg.Listeners.OnCFRange != nil {
+				p.cfg.Listeners.OnCFRange(p, msg)
 			}
 
 		case *wire.MsgCFHeaders:

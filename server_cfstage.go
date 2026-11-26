@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	maxActiveCFStageRequests = 4
-	cfStageWriteTimeout      = 10 * time.Second
+	maxExperimentalCFRequests = 4
+	experimentalCFWriteTimeout = 10 * time.Second
 )
 
 // OnGetCFStage serves one stage from the committed filter index.
@@ -31,8 +31,8 @@ func (sp *serverPeer) OnGetCFStages(p *peer.Peer, msg *wire.MsgGetCFStages) {
 func (sp *serverPeer) serveCFStages(p *peer.Peer, hashes []chainhash.Hash, stage uint8) {
 	s := sp.server
 	select {
-	case s.cfStageRequests <- struct{}{}:
-		defer func() { <-s.cfStageRequests }()
+	case s.experimentalCFRequests <- struct{}{}:
+		defer func() { <-s.experimentalCFRequests }()
 	default:
 		return
 	}
@@ -51,7 +51,7 @@ func (sp *serverPeer) serveCFStages(p *peer.Peer, hashes []chainhash.Hash, stage
 
 	// Build every response before sending the first one, so an unavailable
 	// entry does not produce a partial group.
-	responses := make([]wire.MsgCFStage, len(filters))
+	responses := make([]wire.Message, len(filters))
 	for i, filter := range filters {
 		if len(filter) == 0 {
 			return
@@ -62,22 +62,24 @@ func (sp *serverPeer) serveCFStages(p *peer.Peer, hashes []chainhash.Hash, stage
 				hashes[i], err)
 			return
 		}
-		responses[i] = wire.MsgCFStage{
+		responses[i] = &wire.MsgCFStage{
 			BlockHash: hashes[i],
 			Stage:     stage,
 			N:         n,
 			Data:      data,
 		}
 	}
+	s.sendExperimentalCF(p, responses...)
+}
 
-	// Wait for each write, bounding the output queue for peers that send
-	// requests faster than they read responses. Give the entire group one
-	// deadline and disconnect if the write cannot finish in time.
-	timer := time.NewTimer(cfStageWriteTimeout)
+// Wait for each write to bound the output queue. Give the entire request one
+// deadline and disconnect if the write cannot finish in time.
+func (s *server) sendExperimentalCF(p *peer.Peer, responses ...wire.Message) {
+	timer := time.NewTimer(experimentalCFWriteTimeout)
 	defer timer.Stop()
 	done := make(chan struct{}, 1)
-	for i := range responses {
-		p.QueueMessage(&responses[i], done)
+	for _, response := range responses {
+		p.QueueMessage(response, done)
 		select {
 		case <-done:
 		case <-p.Done():

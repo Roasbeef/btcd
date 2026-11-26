@@ -1,0 +1,33 @@
+name: Experimental compact filters
+
+on:
+  push:
+    branches:
+      - experimental/progressive-cfilters
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            wire/go.sum
+      - name: Build btcd
+        run: go build -o "$RUNNER_TEMP/btcd-progressive" .
+      - name: Test wire messages
+        working-directory: wire
+        run: go test -count=1 ./...
+      - name: Test producer and peer
+        run: go test -count=1 ./internal/progressivecf ./peer
+      - name: Test over a live btcd connection
+        run: go test -count=1 -tags=rpctest -run '^(TestProgressiveCFStages|TestPrecomputedCFRange)$' -v ./integration

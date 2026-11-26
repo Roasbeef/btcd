@@ -508,6 +508,9 @@ func TestPeerListeners(t *testing.T) {
 			OnGetCFStages: func(p *peer.Peer, msg *wire.MsgGetCFStages) {
 				ok <- msg
 			},
+			OnGetCFRange: func(p *peer.Peer, msg *wire.MsgGetCFRange) {
+				ok <- msg
+			},
 			OnGetCFHeaders: func(p *peer.Peer, msg *wire.MsgGetCFHeaders) {
 				ok <- msg
 			},
@@ -518,6 +521,9 @@ func TestPeerListeners(t *testing.T) {
 				ok <- msg
 			},
 			OnCFStage: func(p *peer.Peer, msg *wire.MsgCFStage) {
+				ok <- msg
+			},
+			OnCFRange: func(p *peer.Peer, msg *wire.MsgCFRange) {
 				ok <- msg
 			},
 			OnCFHeaders: func(p *peer.Peer, msg *wire.MsgCFHeaders) {
@@ -664,6 +670,10 @@ func TestPeerListeners(t *testing.T) {
 			wire.NewMsgGetCFStages([]chainhash.Hash{{1}, {2}}, 3),
 		},
 		{
+			"OnGetCFRange",
+			wire.NewMsgGetCFRange(&chainhash.Hash{1}, &chainhash.Hash{2}),
+		},
+		{
 			"OnGetCFHeaders",
 			wire.NewMsgGetCFHeaders(wire.GCSFilterRegular, 0, &chainhash.Hash{}),
 		},
@@ -682,6 +692,10 @@ func TestPeerListeners(t *testing.T) {
 				BlockHash: chainhash.Hash{1}, Stage: 3,
 				N: 1, Data: []byte{0xc0},
 			},
+		},
+		{
+			"OnCFRange",
+			&wire.MsgCFRange{Data: []byte{0x01, 0x02}},
 		},
 		{
 			"OnCFHeaders",

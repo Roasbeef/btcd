@@ -258,6 +258,9 @@ func btcdMain(serverChan chan<- *server) error {
 	unveilx(cfg.RPCKey, "rwc")
 	unveilx(cfg.RPCCert, "rwc")
 	unveilx(cfg.DataDir, "rwc")
+	for _, path := range cfg.RangeCFilters {
+		unveilx(path, "r")
+	}
 
 	// drop unveil and tty
 	pledgex("stdio rpath wpath cpath flock dns inet")
