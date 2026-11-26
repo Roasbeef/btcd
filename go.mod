@@ -2,6 +2,9 @@ module github.com/btcsuite/btcd
 
 go 1.26.10
 
+// Use the wire definitions for the progressive compact filter experiment.
+replace github.com/btcsuite/btcd/wire/v2 => ./wire
+
 require (
 	github.com/btcsuite/btcd/address/v2 v2.0.1
 	github.com/btcsuite/btcd/btcec/v2 v2.5.1

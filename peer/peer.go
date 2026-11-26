@@ -125,6 +125,10 @@ type MessageListeners struct {
 	// OnCFilter is invoked when a peer receives a cfilter bitcoin message.
 	OnCFilter func(p *Peer, msg *wire.MsgCFilter)
 
+	// OnCFStage is invoked when a peer receives an experimental cfstage
+	// message.
+	OnCFStage func(p *Peer, msg *wire.MsgCFStage)
+
 	// OnCFHeaders is invoked when a peer receives a cfheaders bitcoin
 	// message.
 	OnCFHeaders func(p *Peer, msg *wire.MsgCFHeaders)
@@ -157,6 +161,14 @@ type MessageListeners struct {
 	// OnGetCFilters is invoked when a peer receives a getcfilters bitcoin
 	// message.
 	OnGetCFilters func(p *Peer, msg *wire.MsgGetCFilters)
+
+	// OnGetCFStage is invoked when a peer receives an experimental
+	// single-block request.
+	OnGetCFStage func(p *Peer, msg *wire.MsgGetCFStage)
+
+	// OnGetCFStages is invoked when a peer receives an experimental grouped
+	// request for progressive filter stages.
+	OnGetCFStages func(p *Peer, msg *wire.MsgGetCFStages)
 
 	// OnGetCFHeaders is invoked when a peer receives a getcfheaders
 	// bitcoin message.
@@ -1620,6 +1632,16 @@ out:
 				p.cfg.Listeners.OnGetCFilters(p, msg)
 			}
 
+		case *wire.MsgGetCFStage:
+			if p.cfg.Listeners.OnGetCFStage != nil {
+				p.cfg.Listeners.OnGetCFStage(p, msg)
+			}
+
+		case *wire.MsgGetCFStages:
+			if p.cfg.Listeners.OnGetCFStages != nil {
+				p.cfg.Listeners.OnGetCFStages(p, msg)
+			}
+
 		case *wire.MsgGetCFHeaders:
 			if p.cfg.Listeners.OnGetCFHeaders != nil {
 				p.cfg.Listeners.OnGetCFHeaders(p, msg)
@@ -1633,6 +1655,11 @@ out:
 		case *wire.MsgCFilter:
 			if p.cfg.Listeners.OnCFilter != nil {
 				p.cfg.Listeners.OnCFilter(p, msg)
+			}
+
+		case *wire.MsgCFStage:
+			if p.cfg.Listeners.OnCFStage != nil {
+				p.cfg.Listeners.OnCFStage(p, msg)
 			}
 
 		case *wire.MsgCFHeaders:

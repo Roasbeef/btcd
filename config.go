@@ -195,6 +195,7 @@ type config struct {
 	UtxoCacheMaxSizeMiB  uint          `long:"utxocachemaxsize" description:"The maximum size in MiB of the UTXO cache"`
 	TxIndex              bool          `long:"txindex" description:"Maintain a full hash-based transaction index which makes all transactions available via the getrawtransaction RPC"`
 	V2Transport          bool          `long:"v2transport" description:"Enable P2P v2 encrypted transport protocol (BIP324) (default: false)"`
+	ExperimentalCFStages bool          `long:"experimentalprogressivecfilters" description:"Serve experimental progressive compact filters on regtest or simnet"`
 	UserAgentComments    []string      `long:"uacomment" description:"Comment to add to the user agent -- See BIP 14 for more information."`
 	Upnp                 bool          `long:"upnp" description:"Use UPnP to map our listening port outside of NAT"`
 	ShowVersion          bool          `short:"V" long:"version" description:"Display version information and exit"`
@@ -633,6 +634,17 @@ func loadConfig() (*config, []string, error) {
 
 	if err := validateMaxPeers(cfg.MaxPeers); err != nil {
 		err := fmt.Errorf("%s: %w", funcName, err)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return nil, nil, err
+	}
+
+	if cfg.ExperimentalCFStages &&
+		(!(cfg.RegressionTest || cfg.SimNet) || cfg.NoCFilters) {
+
+		str := "%s: --experimentalprogressivecfilters requires " +
+			"--regtest or --simnet and the committed filter index"
+		err := fmt.Errorf(str, funcName)
 		fmt.Fprintln(os.Stderr, err)
 		fmt.Fprintln(os.Stderr, usageMessage)
 		return nil, nil, err

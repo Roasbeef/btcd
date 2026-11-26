@@ -502,6 +502,12 @@ func TestPeerListeners(t *testing.T) {
 			OnGetCFilters: func(p *peer.Peer, msg *wire.MsgGetCFilters) {
 				ok <- msg
 			},
+			OnGetCFStage: func(p *peer.Peer, msg *wire.MsgGetCFStage) {
+				ok <- msg
+			},
+			OnGetCFStages: func(p *peer.Peer, msg *wire.MsgGetCFStages) {
+				ok <- msg
+			},
 			OnGetCFHeaders: func(p *peer.Peer, msg *wire.MsgGetCFHeaders) {
 				ok <- msg
 			},
@@ -509,6 +515,9 @@ func TestPeerListeners(t *testing.T) {
 				ok <- msg
 			},
 			OnCFilter: func(p *peer.Peer, msg *wire.MsgCFilter) {
+				ok <- msg
+			},
+			OnCFStage: func(p *peer.Peer, msg *wire.MsgCFStage) {
 				ok <- msg
 			},
 			OnCFHeaders: func(p *peer.Peer, msg *wire.MsgCFHeaders) {
@@ -647,6 +656,14 @@ func TestPeerListeners(t *testing.T) {
 			wire.NewMsgGetCFilters(wire.GCSFilterRegular, 0, &chainhash.Hash{}),
 		},
 		{
+			"OnGetCFStage",
+			wire.NewMsgGetCFStage(&chainhash.Hash{1}, 2),
+		},
+		{
+			"OnGetCFStages",
+			wire.NewMsgGetCFStages([]chainhash.Hash{{1}, {2}}, 3),
+		},
+		{
 			"OnGetCFHeaders",
 			wire.NewMsgGetCFHeaders(wire.GCSFilterRegular, 0, &chainhash.Hash{}),
 		},
@@ -658,6 +675,13 @@ func TestPeerListeners(t *testing.T) {
 			"OnCFilter",
 			wire.NewMsgCFilter(wire.GCSFilterRegular, &chainhash.Hash{},
 				[]byte("payload")),
+		},
+		{
+			"OnCFStage",
+			&wire.MsgCFStage{
+				BlockHash: chainhash.Hash{1}, Stage: 3,
+				N: 1, Data: []byte{0xc0},
+			},
 		},
 		{
 			"OnCFHeaders",

@@ -306,6 +306,10 @@ type server struct {
 	addrIndex *indexers.AddrIndex
 	cfIndex   *indexers.CfIndex
 
+	// cfStageRequests limits experimental stage requests in flight across
+	// all peers. It is nil when the experiment is disabled.
+	cfStageRequests chan struct{}
+
 	// The fee estimator keeps track of how long transactions are left in
 	// the mempool before they are mined into blocks.
 	feeEstimator *mempool.FeeEstimator
@@ -2300,7 +2304,7 @@ func disconnectPeer(peerList map[int32]*serverPeer, compareFunc func(*serverPeer
 
 // newPeerConfig returns the configuration for the given serverPeer.
 func newPeerConfig(sp *serverPeer) *peer.Config {
-	return &peer.Config{
+	peerCfg := &peer.Config{
 		Listeners: peer.MessageListeners{
 			OnVersion:      sp.OnVersion,
 			OnVerAck:       sp.OnVerAck,
@@ -2340,6 +2344,12 @@ func newPeerConfig(sp *serverPeer) *peer.Config {
 		DisableStallHandler: cfg.DisableStallHandler,
 		UsingV2Conn:         cfg.V2Transport,
 	}
+	if sp.server.cfStageRequests != nil {
+		peerCfg.Listeners.OnGetCFStage = sp.OnGetCFStage
+		peerCfg.Listeners.OnGetCFStages = sp.OnGetCFStages
+	}
+
+	return peerCfg
 }
 
 // acquireInboundPeerAdmission reserves the source budgets for an inbound peer
@@ -3061,6 +3071,9 @@ func newServer(listenAddrs, agentBlacklist, agentWhitelist []string,
 		indxLog.Info("Committed filter index is enabled")
 		s.cfIndex = indexers.NewCfIndex(db, chainParams)
 		indexes = append(indexes, s.cfIndex)
+	}
+	if cfg.ExperimentalCFStages {
+		s.cfStageRequests = make(chan struct{}, maxActiveCFStageRequests)
 	}
 
 	// Create an index manager if any of the optional indexes are enabled.
